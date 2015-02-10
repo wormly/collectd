@@ -769,6 +769,7 @@ perl_la_CFLAGS += -Wno-nonnull
 endif
 perl_la_LDFLAGS = $(PLUGIN_LDFLAGS) \
 		$(PERL_LDFLAGS)
+perl_la_LIBADD = $(PERL_LIBS)
 endif
 
 if BUILD_PLUGIN_PF
@@ -1173,6 +1174,13 @@ write_kafka_la_SOURCES = write_kafka.c \
                         utils_crc32.c utils_crc32.h
 write_kafka_la_LDFLAGS = $(PLUGIN_LDFLAGS) $(BUILD_WITH_LIBRDKAFKA_LDFLAGS)
 write_kafka_la_LIBADD = $(BUILD_WITH_LIBRDKAFKA_LIBS)
+endif
+
+if BUILD_PLUGIN_WRITE_LOG
+pkglib_LTLIBRARIES += write_log.la
+write_log_la_SOURCES = write_log.c \
+                        utils_format_graphite.c utils_format_graphite.h
+write_log_la_LDFLAGS = $(PLUGIN_LDFLAGS)
 endif
 
 if BUILD_PLUGIN_WRITE_MONGODB

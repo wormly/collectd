@@ -1964,7 +1964,7 @@ then
 		[with_libgcrypt="no (symbol gcry_md_hash_buffer not found)"])
 
 	if test "$with_libgcrypt" != "no"; then
-		AM_PATH_LIBGCRYPT(1:1.2.0,,with_libgcrypt="no (version 1.2.0+ required)")
+		m4_ifdef([AM_PATH_LIBGCRYPT],[AM_PATH_LIBGCRYPT(1:1.2.0,,with_libgcrypt="no (version 1.2.0+ required)")])
 		GCRYPT_CPPFLAGS="$LIBGCRYPT_CPPFLAGS $LIBGCRYPT_CFLAGS"
 		GCRYPT_LIBS="$LIBGCRYPT_LIBS"
 	fi
@@ -3219,12 +3219,12 @@ if test "x$with_libperl" = "xyes" \
 	&& test -n "$perl_interpreter"
 then
   SAVE_CFLAGS="$CFLAGS"
-  SAVE_LDFLAGS="$LDFLAGS"
+  SAVE_LIBS="$LIBS"
 dnl ARCHFLAGS="" -> disable multi -arch on OSX (see Config_heavy.pl:fetch_string)
   PERL_CFLAGS=`ARCHFLAGS="" $perl_interpreter -MExtUtils::Embed -e ccopts`
-  PERL_LDFLAGS=`ARCHFLAGS="" $perl_interpreter -MExtUtils::Embed -e ldopts`
+  PERL_LIBS=`ARCHFLAGS="" $perl_interpreter -MExtUtils::Embed -e ldopts`
   CFLAGS="$CFLAGS $PERL_CFLAGS"
-  LDFLAGS="$LDFLAGS $PERL_LDFLAGS"
+  LIBS="$LIBS $PERL_LIBS"
 
   AC_CACHE_CHECK([for libperl],
     [c_cv_have_libperl],
@@ -3251,13 +3251,13 @@ dnl ARCHFLAGS="" -> disable multi -arch on OSX (see Config_heavy.pl:fetch_string
   then
 	  AC_DEFINE(HAVE_LIBPERL, 1, [Define if libperl is present and usable.])
 	  AC_SUBST(PERL_CFLAGS)
-	  AC_SUBST(PERL_LDFLAGS)
+	  AC_SUBST(PERL_LIBS)
   else
 	  with_libperl="no"
   fi
 
   CFLAGS="$SAVE_CFLAGS"
-  LDFLAGS="$SAVE_LDFLAGS"
+  LIBS="$SAVE_LIBS"
 else if test -z "$perl_interpreter"; then
   with_libperl="no (no perl interpreter found)"
   c_cv_have_libperl="no"
@@ -3267,9 +3267,9 @@ AM_CONDITIONAL(BUILD_WITH_LIBPERL, test "x$with_libperl" = "xyes")
 if test "x$with_libperl" = "xyes"
 then
 	SAVE_CFLAGS="$CFLAGS"
-	SAVE_LDFLAGS="$LDFLAGS"
+	SAVE_LIBS="$LIBS"
 	CFLAGS="$CFLAGS $PERL_CFLAGS"
-	LDFLAGS="$LDFLAGS $PERL_LDFLAGS"
+	LIBS="$LIBS $PERL_LIBS"
 
 	AC_CACHE_CHECK([if perl supports ithreads],
 		[c_cv_have_perl_ithreads],
@@ -3296,17 +3296,17 @@ then
 	fi
 
 	CFLAGS="$SAVE_CFLAGS"
-	LDFLAGS="$SAVE_LDFLAGS"
+	LIBS="$SAVE_LIBS"
 fi
 
 if test "x$with_libperl" = "xyes"
 then
 	SAVE_CFLAGS="$CFLAGS"
-	SAVE_LDFLAGS="$LDFLAGS"
+	SAVE_LIBS="$LIBS"
 	# trigger an error if Perl_load_module*() uses __attribute__nonnull__(3)
 	# (see issues #41 and #42)
 	CFLAGS="$CFLAGS $PERL_CFLAGS -Wall -Werror"
-	LDFLAGS="$LDFLAGS $PERL_LDFLAGS"
+	LIBS="$LIBS $PERL_LIBS"
 
 	AC_CACHE_CHECK([for broken Perl_load_module()],
 		[c_cv_have_broken_perl_load_module],
@@ -3330,7 +3330,7 @@ then
 	)
 
 	CFLAGS="$SAVE_CFLAGS"
-	LDFLAGS="$SAVE_LDFLAGS"
+	LIBS="$SAVE_LIBS"
 fi
 AM_CONDITIONAL(HAVE_BROKEN_PERL_LOAD_MODULE,
 		test "x$c_cv_have_broken_perl_load_module" = "xyes")
@@ -3338,9 +3338,9 @@ AM_CONDITIONAL(HAVE_BROKEN_PERL_LOAD_MODULE,
 if test "x$with_libperl" = "xyes"
 then
 	SAVE_CFLAGS="$CFLAGS"
-	SAVE_LDFLAGS="$LDFLAGS"
+	SAVE_LIBS="$LIBS"
 	CFLAGS="$CFLAGS $PERL_CFLAGS"
-	LDFLAGS="$LDFLAGS $PERL_LDFLAGS"
+	LIBS="$LIBS $PERL_LIBS"
 
 	AC_CHECK_MEMBER(
 		[struct mgvtbl.svt_local],
@@ -3359,7 +3359,7 @@ then
 	fi
 
 	CFLAGS="$SAVE_CFLAGS"
-	LDFLAGS="$SAVE_LDFLAGS"
+	LIBS="$SAVE_LIBS"
 fi
 # }}}
 
@@ -4139,10 +4139,11 @@ fi
 if test "x$with_libstatgrab" = "xyes"
 then
   SAVE_CFLAGS="$CFLAGS"
-  SAVE_LDFLAGS="$LDFLAGS"
+  SAVE_LIBS="$LIBS"
 
   CFLAGS="$CFLAGS $with_libstatgrab_cflags"
   LDFLAGS="$LDFLAGS $with_libstatgrab_ldflags"
+  LIBS="-lstatgrab $LIBS"
 
   AC_CACHE_CHECK([if libstatgrab >= 0.90],
           [c_cv_have_libstatgrab_0_90],
@@ -4162,6 +4163,7 @@ then
 
   CFLAGS="$SAVE_CFLAGS"
   LDFLAGS="$SAVE_LDFLAGS"
+  LIBS="$SAVE_LIBS"
 fi
 
 AM_CONDITIONAL(BUILD_WITH_LIBSTATGRAB, test "x$with_libstatgrab" = "xyes")
@@ -5578,6 +5580,7 @@ AC_PLUGIN([wireless],    [$plugin_wireless],   [Wireless statistics])
 AC_PLUGIN([write_graphite], [yes],             [Graphite / Carbon output plugin])
 AC_PLUGIN([write_http],  [$with_libcurl],      [HTTP output plugin])
 AC_PLUGIN([write_kafka],  [$with_librdkafka],  [Kafka output plugin])
+AC_PLUGIN([write_log], [yes],                  [Log output plugin])
 AC_PLUGIN([write_mongodb], [$with_libmongoc],  [MongoDB output plugin])
 AC_PLUGIN([write_redis], [$with_libhiredis],    [Redis output plugin])
 AC_PLUGIN([write_riemann], [$have_protoc_c],   [Riemann output plugin])
@@ -5947,6 +5950,7 @@ Configuration:
     write_graphite  . . . $enable_write_graphite
     write_http  . . . . . $enable_write_http
     write_kafka . . . . . $enable_write_kafka
+    write_log . . . . . . $enable_write_log
     write_mongodb . . . . $enable_write_mongodb
     write_redis . . . . . $enable_write_redis
     write_riemann . . . . $enable_write_riemann
