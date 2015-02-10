@@ -412,9 +412,9 @@ int main (int argc, char **argv)
 	{
 		int c;
 
-		c = getopt (argc, argv, "htTC:"
+		c = getopt (argc, argv, "htTfC:"
 #if COLLECT_DAEMON
-				"fP:"
+				"P:"
 #endif
 		);
 
@@ -442,6 +442,9 @@ int main (int argc, char **argv)
 				break;
 			case 'f':
 				daemonize = 0;
+				break;
+#else
+			case 'f':
 				break;
 #endif /* COLLECT_DAEMON */
 			case 'h':
