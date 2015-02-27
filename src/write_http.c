@@ -38,6 +38,12 @@
 
 #define WH_DEFAULT_LOW_LIMIT_BYTES_PER_SEC 100
 
+// bytes. 512kb, instead of the default of 4kb 
+#define WH_BUFFER_SIZE 524288
+
+// seconds. Set this high enough for all the plugins to have read their data in this timeframe
+#define WH_FLUSH_AFTER 2
+
 /*
  * Private variables
  */
@@ -64,7 +70,7 @@ struct wh_callback_s
         CURL *curl;
         char curl_errbuf[CURL_ERROR_SIZE];
 
-        char   send_buffer[4096];
+        char   send_buffer[WH_BUFFER_SIZE];
         size_t send_buffer_free;
         size_t send_buffer_fill;
         cdtime_t send_buffer_init_time;
@@ -520,6 +526,23 @@ static int config_set_format (wh_callback_t *cb, /* {{{ */
         return (0);
 } /* }}} int config_set_string */
 
+static int wh_flush_now (user_data_t *ud)
+{
+	// X seconds + 0 nanoseconds
+	struct timespec sleepFor = { WH_FLUSH_AFTER, 0 };
+	
+	// sleep for some time. If there are multiple read threads (default), this particular thread will sleep while the rest
+	// of the threads finish all the plugins. So if WH_FLUSH_AFTER is large enough, we get all the metrics fast and without
+	// waiting for the write_http buffer to fill up. (if it's not large enough, we may end up waiting 1 more interval, 
+	// but default collectd can wait up to, say, 60 intervals if only uptime plugin is enabled)
+	nanosleep(&sleepFor, /* remaining */ NULL);
+
+	// timeout is 0 - this means that all the metrics older than 0 are flushed (~ all of metrics )
+	wh_flush(/* timeout */ 0, /* unused */ NULL, ud);
+	
+	return (0);
+}
+
 static int wh_config_url (oconfig_item_t *ci) /* {{{ */
 {
         wh_callback_t *cb;
@@ -602,6 +625,8 @@ static int wh_config_url (oconfig_item_t *ci) /* {{{ */
 
         user_data.free_func = wh_callback_free;
         plugin_register_write ("write_http", wh_write, &user_data);
+
+        plugin_register_complex_read  (/* group */ NULL, /* now */ "write_http/now", wh_flush_now, NULL, &user_data);
 
         return (0);
 } /* }}} int wh_config_url */
