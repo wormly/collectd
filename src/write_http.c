@@ -626,8 +626,10 @@ static int wh_config_url (oconfig_item_t *ci) /* {{{ */
         user_data.free_func = wh_callback_free;
         plugin_register_write ("write_http", wh_write, &user_data);
 
+        char const *test_mode = global_option_get ("TestReadMode");
+        
         // if collectd was called with -T and no read threads were started, we're not flushing since -T invokes wh_flush manually
-        if (global_option_get("TestReadMode") == "yes") {
+        if (test_mode == NULL || strcmp(test_mode, "yes") != 0) {
             DEBUG ("write_http: Will not flush as read plugin since there are no read threads");
         } else {
             plugin_register_complex_read  (/* group */ NULL, /* name */ "write_http/wormly_patch_write_now", wh_flush_now, NULL, &user_data);
