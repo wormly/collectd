@@ -432,6 +432,7 @@ int main (int argc, char **argv)
 			case 'T':
 				test_readall = 1;
 				global_option_set ("ReadThreads", "-1");
+				global_option_set ("TestReadMode", "yes");
 #if COLLECT_DAEMON
 				daemonize = 0;
 #endif /* COLLECT_DAEMON */
