@@ -537,6 +537,12 @@ static int wh_flush_now (user_data_t *ud)
 	// but default collectd can wait up to, say, 60 intervals if only uptime plugin is enabled)
 	nanosleep(&sleepFor, /* remaining */ NULL);
 
+    // if wh_callback_free has been called before for write plugin, it's already been flushed 
+    if (ud->data == NULL) {
+        DEBUG("Will not flush due to cleared cb");
+        return (0);
+    }
+
 	// timeout is 0 - this means that all the metrics older than 0 are flushed (~ all of metrics )
 	wh_flush(/* timeout */ 0, /* unused */ NULL, ud);
 	
@@ -627,9 +633,11 @@ static int wh_config_url (oconfig_item_t *ci) /* {{{ */
         plugin_register_write ("write_http", wh_write, &user_data);
 
         // if collectd was called with -T and no read threads were started, we're not flushing since -T invokes wh_flush manually
+        // and we don't want to wait for a couple of seconds for no reason
         if (IS_TRUE (global_option_get ("TestReadMode"))) {
             DEBUG ("write_http: Will not flush as read plugin since there are no read threads");
         } else {
+            user_data.free_func = NULL;
             plugin_register_complex_read  (/* group */ NULL, /* name */ "write_http/wormly_patch_write_now", wh_flush_now, NULL, &user_data);
             DEBUG ("write_http: Will register a read plugin to flush immediately");
         }
