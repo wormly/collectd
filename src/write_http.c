@@ -36,6 +36,14 @@
 
 #include <curl/curl.h>
 
+#define WH_DEFAULT_LOW_LIMIT_BYTES_PER_SEC 100
+
+// bytes. 512kb, instead of the default of 4kb 
+#define WH_BUFFER_SIZE 524288
+
+// seconds. Set this high enough for all the plugins to have read their data in this timeframe
+#define WH_FLUSH_AFTER 2
+
 /*
  * Private variables
  */
@@ -50,6 +58,10 @@ struct wh_callback_s
         int   verify_host;
         char *cacert;
         int   store_rates;
+        int   abort_on_slow;
+        int   low_limit_bytes;
+        int   post_timeout;
+        time_t interval;
 
 #define WH_FORMAT_COMMAND 0
 #define WH_FORMAT_JSON    1
@@ -58,7 +70,7 @@ struct wh_callback_s
         CURL *curl;
         char curl_errbuf[CURL_ERROR_SIZE];
 
-        char   send_buffer[4096];
+        char   send_buffer[WH_BUFFER_SIZE];
         size_t send_buffer_free;
         size_t send_buffer_fill;
         cdtime_t send_buffer_init_time;
@@ -109,6 +121,16 @@ static int wh_callback_init (wh_callback_t *cb) /* {{{ */
         {
                 ERROR ("curl plugin: curl_easy_init failed.");
                 return (-1);
+        }
+
+        if(cb->abort_on_slow && cb->interval > 0)
+        {
+            curl_easy_setopt(cb->curl, CURLOPT_LOW_SPEED_LIMIT, (cb->low_limit_bytes?cb->low_limit_bytes:WH_DEFAULT_LOW_LIMIT_BYTES_PER_SEC));
+            curl_easy_setopt(cb->curl, CURLOPT_LOW_SPEED_TIME, cb->interval);
+        }
+        if(cb->post_timeout > 0)
+        {
+           curl_easy_setopt(cb->curl, CURLOPT_TIMEOUT, cb->post_timeout);
         }
 
         curl_easy_setopt (cb->curl, CURLOPT_NOSIGNAL, 1L);
@@ -321,6 +343,7 @@ static int wh_write_command (const data_set_t *ds, const value_list_t *vl, /* {{
 
         if (cb->curl == NULL)
         {
+                cb->interval = CDTIME_T_TO_TIME_T(vl->interval);
                 status = wh_callback_init (cb);
                 if (status != 0)
                 {
@@ -369,6 +392,7 @@ static int wh_write_json (const data_set_t *ds, const value_list_t *vl, /* {{{ *
 
         if (cb->curl == NULL)
         {
+                cb->interval = CDTIME_T_TO_TIME_T(vl->interval);
                 status = wh_callback_init (cb);
                 if (status != 0)
                 {
@@ -502,6 +526,29 @@ static int config_set_format (wh_callback_t *cb, /* {{{ */
         return (0);
 } /* }}} int config_set_string */
 
+static int wh_flush_now (user_data_t *ud)
+{
+	// X seconds + 0 nanoseconds
+	struct timespec sleepFor = { WH_FLUSH_AFTER, 0 };
+
+	// sleep for some time. If there are multiple read threads (default), this particular thread will sleep while the rest
+	// of the threads finish all the plugins. So if WH_FLUSH_AFTER is large enough, we get all the metrics fast and without
+	// waiting for the write_http buffer to fill up. (if it's not large enough, we may end up waiting 1 more interval,
+	// but default collectd can wait up to, say, 60 intervals if only uptime plugin is enabled)
+	nanosleep(&sleepFor, /* remaining */ NULL);
+
+    // if wh_callback_free has been called before for write plugin, it's already been flushed
+    if (ud->data == NULL) {
+        DEBUG("Will not flush due to cleared cb");
+        return (0);
+    }
+
+	// timeout is 0 - this means that all the metrics older than 0 are flushed (~ all of metrics )
+	wh_flush(/* timeout */ 0, /* unused */ NULL, ud);
+
+	return (0);
+}
+
 static int wh_config_url (oconfig_item_t *ci) /* {{{ */
 {
         wh_callback_t *cb;
@@ -525,6 +572,8 @@ static int wh_config_url (oconfig_item_t *ci) /* {{{ */
         cb->cacert = NULL;
         cb->format = WH_FORMAT_COMMAND;
         cb->curl = NULL;
+        cb->low_limit_bytes = WH_DEFAULT_LOW_LIMIT_BYTES_PER_SEC;
+        cb->post_timeout = 0;
 
         pthread_mutex_init (&cb->send_lock, /* attr = */ NULL);
 
@@ -550,11 +599,27 @@ static int wh_config_url (oconfig_item_t *ci) /* {{{ */
                         config_set_format (cb, child);
                 else if (strcasecmp ("StoreRates", child->key) == 0)
                         config_set_boolean (&cb->store_rates, child);
+                else if (strcasecmp ("LowSpeedLimit", child->key) == 0)
+                        cf_util_get_int (child, &cb->abort_on_slow);
+                else if (strcasecmp ("LowLimitBytesPerSec", child->key) == 0)
+                        cf_util_get_int (child, &cb->low_limit_bytes);
+                else if (strcasecmp ("PostTimeoutSec", child->key) == 0)
+                        cf_util_get_int (child, &cb->post_timeout);
                 else
                 {
                         ERROR ("write_http plugin: Invalid configuration "
                                         "option: %s.", child->key);
                 }
+        }
+
+        if(cb->abort_on_slow)
+        {
+            cb->interval = CDTIME_T_TO_TIME_T(plugin_get_interval());
+        }
+        if(cb->post_timeout == 0)
+        {
+            //setting default timeout to plugin interval.
+            cb->post_timeout = CDTIME_T_TO_TIME_T(plugin_get_interval());
         }
 
         ssnprintf (callback_name, sizeof (callback_name), "write_http/%s",
@@ -569,6 +634,16 @@ static int wh_config_url (oconfig_item_t *ci) /* {{{ */
 
         user_data.free_func = wh_callback_free;
         plugin_register_write (callback_name, wh_write, &user_data);
+
+        // if collectd was called with -T and no read threads were started, we're not flushing since -T invokes wh_flush manually
+        // and we don't want to wait for a couple of seconds for no reason
+        if (IS_TRUE (global_option_get ("TestReadMode"))) {
+            DEBUG ("write_http: Will not flush as read plugin since there are no read threads");
+        } else {
+            user_data.free_func = NULL;
+            plugin_register_complex_read  (/* group */ NULL, /* name */ callback_name, wh_flush_now, NULL, &user_data);
+            DEBUG ("write_http: Will register a read plugin to flush immediately");
+        }
 
         return (0);
 } /* }}} int wh_config_url */

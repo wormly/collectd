@@ -412,9 +412,9 @@ int main (int argc, char **argv)
 	{
 		int c;
 
-		c = getopt (argc, argv, "htTC:"
+		c = getopt (argc, argv, "htTfC:"
 #if COLLECT_DAEMON
-				"fP:"
+				"P:"
 #endif
 		);
 
@@ -432,6 +432,7 @@ int main (int argc, char **argv)
 			case 'T':
 				test_readall = 1;
 				global_option_set ("ReadThreads", "-1");
+				global_option_set ("TestReadMode", "true");
 #if COLLECT_DAEMON
 				daemonize = 0;
 #endif /* COLLECT_DAEMON */
@@ -442,6 +443,9 @@ int main (int argc, char **argv)
 				break;
 			case 'f':
 				daemonize = 0;
+				break;
+#else
+			case 'f':
 				break;
 #endif /* COLLECT_DAEMON */
 			case 'h':
