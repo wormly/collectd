@@ -59,6 +59,9 @@ struct wh_callback_s
         char *clientkeypass;
         long sslversion;
         _Bool store_rates;
+        int   low_speed_limit;
+        time_t low_speed_time;
+        int timeout;
 
 #define WH_FORMAT_COMMAND 0
 #define WH_FORMAT_JSON    1
@@ -121,6 +124,19 @@ static int wh_callback_init (wh_callback_t *cb) /* {{{ */
                 return (-1);
         }
 
+        if (cb->low_speed_limit > 0 && cb->low_speed_time > 0)
+        {
+                curl_easy_setopt (cb->curl, CURLOPT_LOW_SPEED_LIMIT,
+                                  (long) (cb->low_speed_limit * cb->low_speed_time));
+                curl_easy_setopt (cb->curl, CURLOPT_LOW_SPEED_TIME,
+                                  (long) cb->low_speed_time);
+        }
+
+#ifdef HAVE_CURLOPT_TIMEOUT_MS
+        if (cb->timeout > 0)
+                curl_easy_setopt (cb->curl, CURLOPT_TIMEOUT_MS, (long) cb->timeout);
+#endif
+
         curl_easy_setopt (cb->curl, CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt (cb->curl, CURLOPT_USERAGENT, COLLECTD_USERAGENT);
 
@@ -140,6 +156,11 @@ static int wh_callback_init (wh_callback_t *cb) /* {{{ */
 
         if (cb->user != NULL)
         {
+#ifdef HAVE_CURLOPT_USERNAME
+                curl_easy_setopt (cb->curl, CURLOPT_USERNAME, cb->user);
+                curl_easy_setopt (cb->curl, CURLOPT_PASSWORD,
+                        (cb->pass == NULL) ? "" : cb->pass);
+#else
                 size_t credentials_size;
 
                 credentials_size = strlen (cb->user) + 2;
@@ -156,6 +177,7 @@ static int wh_callback_init (wh_callback_t *cb) /* {{{ */
                 ssnprintf (cb->credentials, credentials_size, "%s:%s",
                                 cb->user, (cb->pass == NULL) ? "" : cb->pass);
                 curl_easy_setopt (cb->curl, CURLOPT_USERPWD, cb->credentials);
+#endif
                 curl_easy_setopt (cb->curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
         }
 
@@ -514,6 +536,8 @@ static int wh_config_node (oconfig_item_t *ci) /* {{{ */
         cb->verify_host = 1;
         cb->format = WH_FORMAT_COMMAND;
         cb->sslversion = CURL_SSLVERSION_DEFAULT;
+        cb->low_speed_limit = 0;
+        cb->timeout = 0;
 
         pthread_mutex_init (&cb->send_lock, /* attr = */ NULL);
 
@@ -581,6 +605,10 @@ static int wh_config_node (oconfig_item_t *ci) /* {{{ */
                         cf_util_get_boolean (child, &cb->store_rates);
                 else if (strcasecmp ("BufferSize", child->key) == 0)
                         cf_util_get_int (child, &buffer_size);
+                else if (strcasecmp ("LowSpeedLimit", child->key) == 0)
+                        cf_util_get_int (child, &cb->low_speed_limit);
+                else if (strcasecmp ("Timeout", child->key) == 0)
+                        cf_util_get_int (child, &cb->timeout);
                 else
                 {
                         ERROR ("write_http plugin: Invalid configuration "
@@ -595,6 +623,9 @@ static int wh_config_node (oconfig_item_t *ci) /* {{{ */
                 wh_callback_free (cb);
                 return (-1);
         }
+
+        if (cb->low_speed_limit > 0)
+                cb->low_speed_time = CDTIME_T_TO_TIME_T(plugin_get_interval());
 
         /* Determine send_buffer_size. */
         cb->send_buffer_size = WRITE_HTTP_DEFAULT_BUFFER_SIZE;

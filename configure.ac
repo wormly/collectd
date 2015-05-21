@@ -589,13 +589,44 @@ AC_CHECK_HEADERS(net/pfvar.h,
 have_termios_h="no"
 AC_CHECK_HEADERS(termios.h, [have_termios_h="yes"])
 
+# For the turbostat plugin
+have_asm_msrindex_h="no"
+AC_CHECK_HEADERS(asm/msr-index.h, [have_asm_msrindex_h="yes"])
+
+if test "x$have_asm_msrindex_h" = "xyes"
+then
+  AC_CACHE_CHECK([whether asm/msr-index.h has MSR_CORE_C3_RESIDENCY],
+                 [c_cv_have_usable_asm_msrindex_h],
+                 AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+[[[
+#include<asm/msr-index.h>
+]]],
+[[[
+int y = MSR_CORE_C3_RESIDENCY;
+return(y);
+]]]
+  )],
+                 [c_cv_have_usable_asm_msrindex_h="yes"],
+                 [c_cv_have_usable_asm_msrindex_h="no"],
+                                  )
+                 )
+fi
+
+have_cpuid_h="no"
+AC_CHECK_HEADERS(cpuid.h, [have_cpuid_h="yes"])
+
+AC_CHECK_HEADERS(sys/capability.h)
 #
 # Checks for typedefs, structures, and compiler characteristics.
 #
 AC_C_CONST
+AC_C_INLINE
+AC_TYPE_OFF_T
 AC_TYPE_PID_T
 AC_TYPE_SIZE_T
+AC_TYPE_SSIZE_T
 AC_TYPE_UID_T
+AC_TYPE_UINT32_T
 AC_HEADER_TIME
 
 #
@@ -1190,6 +1221,7 @@ FILE *fh;
 struct mntent *me;
 fh = setmntent ("/etc/mtab", "r");
 me = getmntent (fh);
+return(me->mnt_passno);
 ]]]
 			)],
 			[c_cv_have_one_getmntent="yes"],
@@ -1209,6 +1241,7 @@ me = getmntent (fh);
 				 int status;
 				 fh = fopen ("/etc/mnttab", "r");
 				 status = getmntent (fh, &mt);
+				 return(status);
 ]]]
 			)],
 			[c_cv_have_two_getmntent="yes"],
@@ -1700,6 +1733,10 @@ then
 		 [have_curlopt_username="yes"],
 		 [have_curlopt_username="no"],
 		 [[#include <curl/curl.h>]])
+		AC_CHECK_DECL(CURLOPT_TIMEOUT_MS,
+		 [have_curlopt_timeout="yes"],
+		 [have_curlopt_timeout="no"],
+		 [[#include <curl/curl.h>]])
 	fi
 fi
 if test "x$with_libcurl" = "xyes"
@@ -1712,6 +1749,11 @@ then
 	if test "x$have_curlopt_username" = "xyes"
 	then
 		AC_DEFINE(HAVE_CURLOPT_USERNAME, 1, [Define if libcurl supports CURLOPT_USERNAME option.])
+	fi
+
+	if test "x$have_curlopt_timeout" = "xyes"
+	then
+		AC_DEFINE(HAVE_CURLOPT_TIMEOUT_MS, 1, [Define if libcurl supports CURLOPT_TIMEOUT_MS option.])
 	fi
 fi
 AM_CONDITIONAL(BUILD_WITH_LIBCURL, test "x$with_libcurl" = "xyes")
@@ -1751,7 +1793,6 @@ then
 	LDFLAGS="$LDFLAGS $with_libdbi_ldflags"
 
 	AC_CHECK_LIB(dbi, dbi_initialize, [with_libdbi="yes"], [with_libdbi="no (Symbol 'dbi_initialize' not found)"])
-	AC_CHECK_LIB(dbi, dbi_driver_open_r, [with_libdbi_r="yes"], [with_libdbi_r="no"])
 
 	CPPFLAGS="$SAVE_CPPFLAGS"
 	LDFLAGS="$SAVE_LDFLAGS"
@@ -1764,11 +1805,6 @@ then
 	AC_SUBST(BUILD_WITH_LIBDBI_CPPFLAGS)
 	AC_SUBST(BUILD_WITH_LIBDBI_LDFLAGS)
 	AC_SUBST(BUILD_WITH_LIBDBI_LIBS)
-
-  if test "x$with_libdbi_r" = "xyes"
-  then
-		AC_DEFINE(HAVE_LIBDBI_R, 1, [Define if reentrant dbi facility is present and usable.])
-  fi
 fi
 AM_CONDITIONAL(BUILD_WITH_LIBDBI, test "x$with_libdbi" = "xyes")
 # }}}
@@ -2081,6 +2117,10 @@ fi
 
 # --with-java {{{
 with_java_home="$JAVA_HOME"
+if test "x$with_java_home" = "x"
+then
+	with_java_home="/usr/lib/jvm"
+fi
 with_java_vmtype="client"
 with_java_cflags=""
 with_java_libs=""
@@ -2105,7 +2145,7 @@ then
 	if test -d "$with_java_home"
 	then
 		AC_MSG_CHECKING([for jni.h])
-		TMPVAR=`find "$with_java_home" -name jni.h -type f -exec 'dirname' '{}' ';' 2>/dev/null | head -n 1`
+		TMPVAR=`find -L "$with_java_home" -name jni.h -type f -exec 'dirname' '{}' ';' 2>/dev/null | head -n 1`
 		if test "x$TMPVAR" != "x"
 		then
 			AC_MSG_RESULT([found in $TMPVAR])
@@ -2115,7 +2155,7 @@ then
 		fi
 
 		AC_MSG_CHECKING([for jni_md.h])
-		TMPVAR=`find "$with_java_home" -name jni_md.h -type f -exec 'dirname' '{}' ';' 2>/dev/null | head -n 1`
+		TMPVAR=`find -L "$with_java_home" -name jni_md.h -type f -exec 'dirname' '{}' ';' 2>/dev/null | head -n 1`
 		if test "x$TMPVAR" != "x"
 		then
 			AC_MSG_RESULT([found in $TMPVAR])
@@ -2125,7 +2165,7 @@ then
 		fi
 
 		AC_MSG_CHECKING([for libjvm.so])
-		TMPVAR=`find "$with_java_home" -name libjvm.so -type f -exec 'dirname' '{}' ';' 2>/dev/null | head -n 1`
+		TMPVAR=`find -L "$with_java_home" -name libjvm.so -type f -exec 'dirname' '{}' ';' 2>/dev/null | head -n 1`
 		if test "x$TMPVAR" != "x"
 		then
 			AC_MSG_RESULT([found in $TMPVAR])
@@ -2137,7 +2177,7 @@ then
 		if test "x$JAVAC" = "x"
 		then
 			AC_MSG_CHECKING([for javac])
-			TMPVAR=`find "$with_java_home" -name javac -type f 2>/dev/null | head -n 1`
+			TMPVAR=`find -L "$with_java_home" -name javac -type f 2>/dev/null | head -n 1`
 			if test "x$TMPVAR" != "x"
 			then
 				JAVAC="$TMPVAR"
@@ -2149,7 +2189,7 @@ then
 		if test "x$JAR" = "x"
 		then
 			AC_MSG_CHECKING([for jar])
-			TMPVAR=`find "$with_java_home" -name jar -type f 2>/dev/null | head -n 1`
+			TMPVAR=`find -L "$with_java_home" -name jar -type f 2>/dev/null | head -n 1`
 			if test "x$TMPVAR" != "x"
 			then
 				JAR="$TMPVAR"
@@ -3169,6 +3209,7 @@ then
 ]]],
 [[[
   int val = PCAP_ERROR_IFACE_NOT_UP;
+  return(val);
 ]]]
 		       )],
 		       [c_cv_libpcap_have_pcap_error_iface_not_up="yes"],
@@ -3715,10 +3756,11 @@ fi
 # --with-librdkafka {{{
 AC_ARG_WITH(librdkafka, [AS_HELP_STRING([--with-librdkafka@<:@=PREFIX@:>@], [Path to librdkafka.])],
 [
-  if test "x$withval" = "xno" && test "x$withval" != "xyes"
+  if test "x$withval" != "xno" && test "x$withval" != "xyes"
   then
     with_librdkafka_cppflags="-I$withval/include"
     with_librdkafka_ldflags="-L$withval/lib"
+    with_librdkafka_rpath="$withval/lib"
     with_librdkafka="yes"
   else
     with_librdkafka="$withval"
@@ -3730,6 +3772,9 @@ AC_ARG_WITH(librdkafka, [AS_HELP_STRING([--with-librdkafka@<:@=PREFIX@:>@], [Pat
 SAVE_CPPFLAGS="$CPPFLAGS"
 SAVE_LDFLAGS="$LDFLAGS"
 
+CPPFLAGS="$CPPFLAGS $with_librdkafka_cppflags"
+LDFLAGS="$LDFLAGS $with_librdkafka_ldflags"
+
 if test "x$with_librdkafka" = "xyes"
 then
 	AC_CHECK_HEADERS(librdkafka/rdkafka.h, [with_librdkafka="yes"], [with_librdkafka="no (librdkafka/rdkafka.h not found)"])
@@ -3739,13 +3784,18 @@ if test "x$with_librdkafka" = "xyes"
 then
 	AC_CHECK_LIB(rdkafka, rd_kafka_new, [with_librdkafka="yes"], [with_librdkafka="no (Symbol 'rd_kafka_new' not found)"])
   AC_CHECK_LIB(rdkafka, rd_kafka_conf_set_log_cb, [with_librdkafka_log_cb="yes"], [with_librdkafka_log_cb="no"])
-  AC_CHECK_LIB(rdkafka, rd_kafka_conf_set_logger, [with_librdkafka_logger="yes"], [with_librdkafka_logger="no"])
+  AC_CHECK_LIB(rdkafka, rd_kafka_set_logger, [with_librdkafka_logger="yes"], [with_librdkafka_logger="no"])
 fi
 if test "x$with_librdkafka" = "xyes"
 then
 	BUILD_WITH_LIBRDKAFKA_CPPFLAGS="$with_librdkafka_cppflags"
 	BUILD_WITH_LIBRDKAFKA_LDFLAGS="$with_librdkafka_ldflags"
-	BUILD_WITH_LIBRDKAFKA_LIBS="-lrdkafka"
+	if test "x$with_librdkafka_rpath" != "x"
+	then
+		BUILD_WITH_LIBRDKAFKA_LIBS="-Wl,-rpath,$with_librdkafka_rpath -lrdkafka"
+	else
+		BUILD_WITH_LIBRDKAFKA_LIBS="-lrdkafka"
+	fi
 	AC_SUBST(BUILD_WITH_LIBRDKAFKA_CPPFLAGS)
 	AC_SUBST(BUILD_WITH_LIBRDKAFKA_LDFLAGS)
 	AC_SUBST(BUILD_WITH_LIBRDKAFKA_LIBS)
@@ -5103,6 +5153,7 @@ plugin_ascent="no"
 plugin_barometer="no"
 plugin_battery="no"
 plugin_bind="no"
+plugin_ceph="no"
 plugin_cgroups="no"
 plugin_conntrack="no"
 plugin_contextswitch="no"
@@ -5135,6 +5186,7 @@ plugin_tape="no"
 plugin_tcpconns="no"
 plugin_ted="no"
 plugin_thermal="no"
+plugin_turbostat="no"
 plugin_uptime="no"
 plugin_users="no"
 plugin_virt="no"
@@ -5158,6 +5210,7 @@ then
 	plugin_entropy="yes"
 	plugin_fscache="yes"
 	plugin_interface="yes"
+	plugin_ipc="yes"
 	plugin_irq="yes"
 	plugin_load="yes"
 	plugin_lvm="yes"
@@ -5180,6 +5233,10 @@ then
 	then
 		plugin_ipvs="yes"
 	fi
+	if test "x$c_cv_have_usable_asm_msrindex_h" = "xyes" && test "x$have_cpuid_h" = "xyes"
+	then
+		plugin_turbostat="yes"
+	fi
 fi
 
 if test "x$ac_system" = "xOpenBSD"
@@ -5199,6 +5256,7 @@ fi
 if test "x$ac_system" = "xAIX"
 then
         plugin_tcpconns="yes"
+        plugin_ipc="yes"
 fi
 
 # FreeBSD
@@ -5230,6 +5288,7 @@ fi
 if test "x$with_kstat" = "xyes"
 then
 	plugin_nfs="yes"
+	plugin_processes="yes"
 	plugin_uptime="yes"
 	plugin_zfs_arc="yes"
 fi
@@ -5294,6 +5353,11 @@ fi
 if test "x$with_libcurl" = "xyes" && test "x$with_libxml2" = "xyes"
 then
 	plugin_curl_xml="yes"
+fi
+
+if test "x$with_libyajl" = "xyes"
+then
+	plugin_ceph="yes"
 fi
 
 if test "x$have_processor_info" = "xyes"
@@ -5468,6 +5532,7 @@ AC_PLUGIN([ascent],      [$plugin_ascent],     [AscentEmu player statistics])
 AC_PLUGIN([barometer],   [$plugin_barometer],  [Barometer sensor on I2C])
 AC_PLUGIN([battery],     [$plugin_battery],    [Battery statistics])
 AC_PLUGIN([bind],        [$plugin_bind],       [ISC Bind nameserver statistics])
+AC_PLUGIN([ceph],        [$plugin_ceph],       [Ceph daemon statistics])
 AC_PLUGIN([conntrack],   [$plugin_conntrack],  [nf_conntrack statistics])
 AC_PLUGIN([contextswitch], [$plugin_contextswitch], [context switch statistics])
 AC_PLUGIN([cpufreq],     [$plugin_cpufreq],    [CPU frequency statistics])
@@ -5486,11 +5551,13 @@ AC_PLUGIN([email],       [yes],                [EMail statistics])
 AC_PLUGIN([entropy],     [$plugin_entropy],    [Entropy statistics])
 AC_PLUGIN([ethstat],     [$plugin_ethstat],    [Stats from NIC driver])
 AC_PLUGIN([exec],        [yes],                [Execution of external programs])
+AC_PLUGIN([fhcount],     [yes],                [File handles statistics])
 AC_PLUGIN([filecount],   [yes],                [Count files in directories])
 AC_PLUGIN([fscache],     [$plugin_fscache],    [fscache statistics])
 AC_PLUGIN([gmond],       [$with_libganglia],   [Ganglia plugin])
 AC_PLUGIN([hddtemp],     [yes],                [Query hddtempd])
 AC_PLUGIN([interface],   [$plugin_interface],  [Interface traffic statistics])
+AC_PLUGIN([ipc],         [$plugin_ipc],        [IPC statistics])
 AC_PLUGIN([ipmi],        [$plugin_ipmi],       [IPMI sensor statistics])
 AC_PLUGIN([iptables],    [$with_libiptc],      [IPTables rule counters])
 AC_PLUGIN([ipvs],        [$plugin_ipvs],       [IPVS connection statistics])
@@ -5568,6 +5635,7 @@ AC_PLUGIN([ted],         [$plugin_ted],        [Read The Energy Detective values
 AC_PLUGIN([thermal],     [$plugin_thermal],    [Linux ACPI thermal zone statistics])
 AC_PLUGIN([threshold],   [yes],                [Threshold checking plugin])
 AC_PLUGIN([tokyotyrant], [$with_libtokyotyrant],  [TokyoTyrant database statistics])
+AC_PLUGIN([turbostat],   [$plugin_turbostat],  [Advanced statistic on Intel cpu states])
 AC_PLUGIN([unixsock],    [yes],                [Unixsock communication plugin])
 AC_PLUGIN([uptime],      [$plugin_uptime],     [Uptime statistics])
 AC_PLUGIN([users],       [$plugin_users],      [User statistics])
@@ -5584,6 +5652,7 @@ AC_PLUGIN([write_log], [yes],                  [Log output plugin])
 AC_PLUGIN([write_mongodb], [$with_libmongoc],  [MongoDB output plugin])
 AC_PLUGIN([write_redis], [$with_libhiredis],    [Redis output plugin])
 AC_PLUGIN([write_riemann], [$have_protoc_c],   [Riemann output plugin])
+AC_PLUGIN([write_sensu], [yes],                [Sensu output plugin])
 AC_PLUGIN([write_tsdb],  [yes],                [TSDB output plugin])
 AC_PLUGIN([xmms],        [$with_libxmms],      [XMMS statistics])
 AC_PLUGIN([zfs_arc],     [$plugin_zfs_arc],    [ZFS ARC statistics])
@@ -5774,10 +5843,11 @@ Configuration:
     libatasmart . . . . . $with_libatasmart
     libcurl . . . . . . . $with_libcurl
     libdbi  . . . . . . . $with_libdbi
-    libhiredis  . . . . . $with_libhiredis
     libesmtp  . . . . . . $with_libesmtp
     libganglia  . . . . . $with_libganglia
     libgcrypt . . . . . . $with_libgcrypt
+    libhal  . . . . . . . $with_libhal
+    libhiredis  . . . . . $with_libhiredis
     libi2c-dev  . . . . . $with_libi2c
     libiokit  . . . . . . $with_libiokit
     libiptc . . . . . . . $with_libiptc
@@ -5789,6 +5859,7 @@ Configuration:
     libmemcached  . . . . $with_libmemcached
     libmnl  . . . . . . . $with_libmnl
     libmodbus . . . . . . $with_libmodbus
+    libmongoc . . . . . . $with_libmongoc
     libmysql  . . . . . . $with_libmysql
     libnetapp . . . . . . $with_libnetapp
     libnetsnmp  . . . . . $with_libnetsnmp
@@ -5796,6 +5867,7 @@ Configuration:
     liboconfig  . . . . . $with_liboconfig
     libopenipmi . . . . . $with_libopenipmipthread
     liboping  . . . . . . $with_liboping
+    libowcapi . . . . . . $with_libowcapi
     libpcap . . . . . . . $with_libpcap
     libperfstat . . . . . $with_perfstat
     libperl . . . . . . . $with_libperl
@@ -5816,9 +5888,8 @@ Configuration:
     libxml2 . . . . . . . $with_libxml2
     libxmms . . . . . . . $with_libxmms
     libyajl . . . . . . . $with_libyajl
-    libevent  . . . . . . $with_libevent
-    protobuf-c  . . . . . $have_protoc_c
     oracle  . . . . . . . $with_oracle
+    protobuf-c  . . . . . $have_protoc_c
     python  . . . . . . . $with_python
 
   Features:
@@ -5833,15 +5904,16 @@ Configuration:
     amqp    . . . . . . . $enable_amqp
     apache  . . . . . . . $enable_apache
     apcups  . . . . . . . $enable_apcups
-    aquaero . . . . . . . $enable_aquaero
     apple_sensors . . . . $enable_apple_sensors
+    aquaero . . . . . . . $enable_aquaero
     ascent  . . . . . . . $enable_ascent
     barometer . . . . . . $enable_barometer
     battery . . . . . . . $enable_battery
     bind  . . . . . . . . $enable_bind
+    ceph  . . . . . . . . $enable_ceph
+    cgroups . . . . . . . $enable_cgroups
     conntrack . . . . . . $enable_conntrack
     contextswitch . . . . $enable_contextswitch
-    cgroups . . . . . . . $enable_cgroups
     cpu . . . . . . . . . $enable_cpu
     cpufreq . . . . . . . $enable_cpufreq
     csv . . . . . . . . . $enable_csv
@@ -5857,11 +5929,13 @@ Configuration:
     entropy . . . . . . . $enable_entropy
     ethstat . . . . . . . $enable_ethstat
     exec  . . . . . . . . $enable_exec
+    fhcount . . . . . . . $enable_fhcount
     filecount . . . . . . $enable_filecount
     fscache . . . . . . . $enable_fscache
     gmond . . . . . . . . $enable_gmond
     hddtemp . . . . . . . $enable_hddtemp
     interface . . . . . . $enable_interface
+    ipc . . . . . . . . . $enable_ipc
     ipmi  . . . . . . . . $enable_ipmi
     iptables  . . . . . . $enable_iptables
     ipvs  . . . . . . . . $enable_ipvs
@@ -5869,8 +5943,8 @@ Configuration:
     java  . . . . . . . . $enable_java
     load  . . . . . . . . $enable_load
     logfile . . . . . . . $enable_logfile
-    lpar  . . . . . . . . $enable_lpar
     log_logstash  . . . . $enable_log_logstash
+    lpar  . . . . . . . . $enable_lpar
     lvm . . . . . . . . . $enable_lvm
     madwifi . . . . . . . $enable_madwifi
     match_empty_counter . $enable_match_empty_counter
@@ -5924,8 +5998,8 @@ Configuration:
     swap  . . . . . . . . $enable_swap
     syslog  . . . . . . . $enable_syslog
     table . . . . . . . . $enable_table
-    tail  . . . . . . . . $enable_tail
     tail_csv  . . . . . . $enable_tail_csv
+    tail  . . . . . . . . $enable_tail
     tape  . . . . . . . . $enable_tape
     target_notification . $enable_target_notification
     target_replace  . . . $enable_target_replace
@@ -5938,6 +6012,7 @@ Configuration:
     thermal . . . . . . . $enable_thermal
     threshold . . . . . . $enable_threshold
     tokyotyrant . . . . . $enable_tokyotyrant
+    turbostat . . . . . . $enable_turbostat
     unixsock  . . . . . . $enable_unixsock
     uptime  . . . . . . . $enable_uptime
     users . . . . . . . . $enable_users
@@ -5954,6 +6029,7 @@ Configuration:
     write_mongodb . . . . $enable_write_mongodb
     write_redis . . . . . $enable_write_redis
     write_riemann . . . . $enable_write_riemann
+    write_sensu . . . . . $enable_write_sensu
     write_tsdb  . . . . . $enable_write_tsdb
     xmms  . . . . . . . . $enable_xmms
     zfs_arc . . . . . . . $enable_zfs_arc
